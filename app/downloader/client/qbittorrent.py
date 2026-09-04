@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import time
@@ -361,10 +362,37 @@ class Qbittorrent(_IDownloadClient):
                                             seeding_time_limit=seeding_time_limit,
                                             use_auto_torrent_management=use_auto_torrent_management,
                                             cookie=cookie)
-            return True if qbc_ret and str(qbc_ret).find("Ok") != -1 else False
+            return self.__is_add_ok(qbc_ret)
+        except qbittorrentapi.Conflict409Error:
+            # qBittorrent 5.x 对已存在的种子返回 409，qb 4.x 则返回 Ok.
+            log.warn(f"【{self.client_type}】种子已存在，无需重复添加")
+            return True
         except Exception as err:
             ExceptionUtils.exception_traceback(err)
             return False
+
+    @staticmethod
+    def __is_add_ok(qbc_ret):
+        """
+        判断添加种子是否成功
+        qBittorrent 4.x 返回 Ok.
+        qBittorrent 5.x 返回 JSON，如
+        {"added_torrent_ids": [...], "success_count": 1, "failure_count": 0, "pending_count": 0}
+        """
+        ret_str = str(qbc_ret or "").strip()
+        if not ret_str:
+            return False
+        if "Ok" in ret_str:
+            return True
+        try:
+            ret_json = json.loads(ret_str)
+        except Exception:
+            return False
+        if not isinstance(ret_json, dict):
+            return False
+        return bool(ret_json.get("added_torrent_ids")) \
+            or int(ret_json.get("success_count") or 0) > 0 \
+            or int(ret_json.get("pending_count") or 0) > 0
 
     def start_torrents(self, ids):
         if not self.qbc:
@@ -492,7 +520,7 @@ class Qbittorrent(_IDownloadClient):
         for torrent in Torrents:
             # 进度
             progress = round(torrent.get('progress') * 100, 1)
-            if torrent.get('state') in ['pausedDL']:
+            if torrent.get('state') in ['pausedDL', 'stoppedDL']:
                 state = "Stoped"
                 speed = "已暂停"
             else:

@@ -29,6 +29,7 @@ from qbittorrentapi.definitions import Dictionary
 from qbittorrentapi.definitions import List
 from qbittorrentapi.definitions import ListEntry
 from qbittorrentapi.definitions import TorrentStates
+from qbittorrentapi.exceptions import NotFound404Error
 from qbittorrentapi.exceptions import TorrentFileError
 from qbittorrentapi.exceptions import TorrentFileNotFoundError
 from qbittorrentapi.exceptions import TorrentFilePermissionError
@@ -1183,6 +1184,8 @@ class TorrentsAPIMixIn(AppAPIMixIn):
             "tags": (None, self._list2string(tags, ",")),
             "skip_checking": (None, is_skip_checking),
             "paused": (None, is_paused),
+            # qBittorrent v5.0+ 将 paused 参数改名为 stopped，两者同时发送以兼容新旧版本
+            "stopped": (None, is_paused),
             "root_folder": (None, is_root_folder),
             "contentLayout": (None, content_layout),
             "rename": (None, rename),
@@ -1672,7 +1675,11 @@ class TorrentsAPIMixIn(AppAPIMixIn):
         :return: None
         """
         data = {"hashes": self._list2string(torrent_hashes, "|")}
-        self._post(_name=APINames.Torrents, _method="resume", data=data, **kwargs)
+        # qBittorrent v5.0+ 将 resume 端点改名为 start，旧端点已移除
+        try:
+            self._post(_name=APINames.Torrents, _method="start", data=data, **kwargs)
+        except NotFound404Error:
+            self._post(_name=APINames.Torrents, _method="resume", data=data, **kwargs)
 
     @handle_hashes
     @login_required
@@ -1684,7 +1691,11 @@ class TorrentsAPIMixIn(AppAPIMixIn):
         :return: None
         """
         data = {"hashes": self._list2string(torrent_hashes, "|")}
-        self._post(_name=APINames.Torrents, _method="pause", data=data, **kwargs)
+        # qBittorrent v5.0+ 将 pause 端点改名为 stop，旧端点已移除
+        try:
+            self._post(_name=APINames.Torrents, _method="stop", data=data, **kwargs)
+        except NotFound404Error:
+            self._post(_name=APINames.Torrents, _method="pause", data=data, **kwargs)
 
     @handle_hashes
     @login_required
