@@ -46,7 +46,6 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/nastool:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/nastool:${{ env.app_version }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/nastool:${{ env.app_version }}-${{ github.run_number }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
