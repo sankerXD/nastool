@@ -455,6 +455,35 @@ class WebAction:
                 return {"code": ret, "msg": ret_msg}
         return {"code": 0}
 
+    @staticmethod
+    def __build_download_subdir(name):
+        """
+        将剧集名称转换为一个安全的单层目录名，非法时返回 None
+        """
+        if not name:
+            return None
+        # 去掉文件系统非法字符和路径分隔符，压缩空白，再剥掉首尾的点，
+        # 避免出现 "."、".." 或以点开头的隐藏目录
+        subdir = StringUtils.clear_file_name(str(name).replace("/", " ").replace("\\", " "))
+        subdir = re.sub(r"\s+", " ", subdir or "").strip(" .")
+        if not subdir:
+            return None
+        return subdir[:120]
+
+    @staticmethod
+    def __append_season_subdir(subdir, media):
+        """
+        在剧集目录下再按季分一层：单季的种子放入 Season N，
+        跨季合集和识别不出季的直接放在剧集目录下
+        """
+        if not subdir or not media:
+            return subdir
+        if media.type == MediaType.MOVIE:
+            return subdir
+        if media.begin_season is None or media.end_season is not None:
+            return subdir
+        return "%s/Season %s" % (subdir, media.begin_season)
+
     def __download(self, data):
         """
         从WEB添加下载
@@ -462,6 +491,8 @@ class WebAction:
         dl_id = data.get("id")
         dl_dir = data.get("dir")
         dl_setting = data.get("setting")
+        # 到同一目录下：在保存目录下再建一层以剧集命名的子目录
+        dl_subdir = self.__build_download_subdir(data.get("unify_name"))
         results = self.dbhelper.get_search_result_by_id(dl_id)
         for res in results:
             media = Media().get_media_info(title=res.TORRENT_NAME, subtitle=res.DESCRIPTION)
@@ -474,9 +505,10 @@ class WebAction:
                                    upload_volume_factor=float(
                                        res.UPLOAD_VOLUME_FACTOR),
                                    download_volume_factor=float(res.DOWNLOAD_VOLUME_FACTOR))
-            # 添加下载
+            # 添加下载，同一部剧的不同季各自落到自己的季目录
             ret, ret_msg = Downloader().download(media_info=media,
                                                  download_dir=dl_dir,
+                                                 download_subdir=self.__append_season_subdir(dl_subdir, media),
                                                  download_setting=dl_setting)
             if ret:
                 # 发送消息
@@ -776,6 +808,12 @@ class WebAction:
             return {"retcode": -1, "retmsg": "输入路径不存在"}
         outpath = data.get("outpath")
         syncmod = ModuleConf.RMT_MODES.get(data.get("syncmod"))
+        # 递归子目录：逐个子目录独立自动识别转移，忽略手工填写的类型/TMDBID/季集
+        if StringUtils.to_bool(data.get("recursive")) and os.path.isdir(inpath):
+            return WebAction.__recursive_transfer(inpath=inpath,
+                                                  syncmod=syncmod,
+                                                  outpath=outpath,
+                                                  min_filesize=data.get("min_filesize"))
         tmdbid = data.get("tmdb")
         mtype = data.get("type")
         season = data.get("season")
@@ -804,6 +842,58 @@ class WebAction:
             return {"retcode": 0, "retmsg": "转移成功"}
         else:
             return {"retcode": 2, "retmsg": ret_msg}
+
+    @staticmethod
+    def __recursive_transfer(inpath, syncmod, outpath=None, min_filesize=None):
+        """
+        递归转移：把输入目录下的每个子目录当作一部独立的媒体自动识别转移，
+        根目录下散落的媒体文件合并为一批处理。单个目录失败不影响其它目录。
+        """
+        inpath = os.path.normpath(inpath)
+        if outpath:
+            outpath = os.path.normpath(outpath)
+        filetransfer = FileTransfer()
+        now_filesize = filetransfer.get_min_filesize(min_filesize)
+        sub_dirs, root_files = [], []
+        for name in sorted(os.listdir(inpath)):
+            sub_path = os.path.join(inpath, name)
+            if PathUtils.is_invalid_path(sub_path):
+                continue
+            if os.path.isdir(sub_path):
+                sub_dirs.append(sub_path)
+            elif os.path.splitext(name)[-1].lower() in RMT_MEDIAEXT \
+                    and (not now_filesize or os.path.getsize(sub_path) >= now_filesize):
+                root_files.append(sub_path)
+        if not sub_dirs and not root_files:
+            return {"retcode": 2, "retmsg": "目录下没有媒体文件，也没有子目录"}
+        # 处理单元：子目录整体走目录识别，根目录下的散文件作为一个文件清单处理
+        # root_path 为 True 时移动模式不会删除该目录，避免把用户选中的顶层目录整个删掉
+        units = [(sub_dir, None, False) for sub_dir in sub_dirs]
+        if root_files:
+            units.append((inpath, root_files, True))
+        succ_count, fail_msgs = 0, []
+        for unit_path, unit_files, is_root in units:
+            try:
+                succ_flag, ret_msg = filetransfer.transfer_media(in_from=SyncType.MAN,
+                                                                 in_path=unit_path,
+                                                                 files=unit_files,
+                                                                 rmt_mode=syncmod,
+                                                                 target_dir=outpath,
+                                                                 min_filesize=min_filesize,
+                                                                 root_path=is_root)
+            except Exception as err:
+                ExceptionUtils.exception_traceback(err)
+                succ_flag, ret_msg = False, str(err)
+            if succ_flag:
+                succ_count += 1
+            else:
+                fail_msgs.append("%s：%s" % (os.path.basename(unit_path), ret_msg or "转移失败"))
+        if not fail_msgs:
+            return {"retcode": 0, "retmsg": "共 %s 项，全部转移成功" % len(units)}
+        return {"retcode": 2,
+                "retmsg": "共 %s 项，成功 %s 项，失败 %s 项：%s%s" % (
+                    len(units), succ_count, len(fail_msgs), "；".join(fail_msgs[:5]),
+                    " 等" if len(fail_msgs) > 5 else "")}
 
     @staticmethod
     def __manual_transfer(inpath,
@@ -3945,6 +4035,22 @@ class WebAction:
         return {"code": code, "msg": msg, "time": times}
 
     @staticmethod
+    def __walk_sub_files(in_path, max_files=5000):
+        """
+        递归遍历目录下的所有文件，跳过回收站及隐藏目录，最多返回 max_files 个
+        """
+        files = []
+        for root, sub_dirs, sub_files in os.walk(in_path):
+            # 原地裁剪，避免走进回收站、隐藏目录及 Synology 的 @eaDir
+            sub_dirs[:] = [sd for sd in sub_dirs
+                           if not PathUtils.is_invalid_path(os.path.join(root, sd))]
+            for f in sub_files:
+                files.append(os.path.join(root, f))
+                if len(files) >= max_files:
+                    return files
+        return files
+
+    @staticmethod
     def __get_sub_path(data):
         """
         查询下级子目录
@@ -3968,7 +4074,11 @@ class WebAction:
                 d = os.path.normpath(unquote(d))
                 if not os.path.isdir(d):
                     d = os.path.dirname(d)
-                dirs = [os.path.join(d, f) for f in os.listdir(d)]
+                if StringUtils.to_bool(data.get("recursive")):
+                    # 递归模式：连子目录里的文件一起列出来，子目录本身不再单独返回
+                    dirs = WebAction.__walk_sub_files(d)
+                else:
+                    dirs = [os.path.join(d, f) for f in os.listdir(d)]
             dirs.sort()
             for ff in dirs:
                 if os.path.isdir(ff):

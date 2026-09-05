@@ -425,6 +425,15 @@ class FileTransfer:
                                          new_name=new_file,
                                          rmt_mode=rmt_mode)
 
+    def get_min_filesize(self, min_filesize=None):
+        """
+        计算生效的最小文件大小限制（字节）：传入 0 表示不限制，未传入则使用配置中的限制
+        """
+        if str(min_filesize) == "0":
+            return 0
+        return self._min_filesize if not str(min_filesize).isdigit() \
+            else int(min_filesize) * 1024 * 1024
+
     def transfer_media(self,
                        in_from: Enum,
                        in_path,
@@ -500,13 +509,7 @@ class FileTransfer:
                     file_list = [bluray_disk_dir]
                     log.info("【Rmt】当前为蓝光原盘文件夹：%s" % str(in_path))
                 else:
-                    if str(min_filesize) == "0":
-                        # 不限制大小
-                        now_filesize = 0
-                    else:
-                        # 未输入大小限制默认为配置大小限制
-                        now_filesize = self._min_filesize if not str(min_filesize).isdigit() else int(
-                            min_filesize) * 1024 * 1024
+                    now_filesize = self.get_min_filesize(min_filesize)
                     # 查找目录下的文件
                     file_list = PathUtils.get_dir_files(in_path=in_path,
                                                         episode_format=episode[0],

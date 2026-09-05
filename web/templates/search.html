@@ -192,7 +192,7 @@
                                       </a>
                                     </div>
                                     <div class="col">
-                                      <a href='javascript:show_download_modal("{{ torrent.id }}","【{{ torrent.site }}】{{ torrent.torrent_name }}","{{ torrent.site }}")'>{{ torrent.torrent_name }}</a>
+                                      <a href='javascript:show_download_modal("{{ torrent.id }}","【{{ torrent.site }}】{{ torrent.torrent_name }}","{{ torrent.site }}",undefined,undefined,"{{ Title|replace('"', '\\"') }}","{{ Item.type }}")'>{{ torrent.torrent_name }}</a>
                                       <div class="text-muted">
                                         {{ torrent.description or '' }}
                                       </div>
@@ -226,7 +226,7 @@
                                       </div>
                                     </div>
                                     <div class="col-auto ms-2 d-none d-md-inline-block">
-                                      <a href='javascript:show_download_modal("{{ torrent.id }}","【{{ torrent.site }}】{{ torrent.torrent_name }}","{{ torrent.site }}")' class="link-secondary" title="下载">
+                                      <a href='javascript:show_download_modal("{{ torrent.id }}","【{{ torrent.site }}】{{ torrent.torrent_name }}","{{ torrent.site }}",undefined,undefined,"{{ Title|replace('"', '\\"') }}","{{ Item.type }}")' class="link-secondary" title="下载">
                                         {{ SVG.download() }}
                                       </a>
                                     </div>

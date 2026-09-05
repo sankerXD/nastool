@@ -30,6 +30,11 @@
             <div class="d-flex flex-column flex-md-row justify-content-md-between">
               <div class="text-muted align-self-center">
                 共 <span id="mediafile_num">0</span> 个文件
+                <label class="form-check form-check-inline form-switch ms-3 mb-0 align-middle">
+                  <input class="form-check-input" type="checkbox" id="mediafile_recursive"
+                         onchange="refresh_files()">
+                  <span class="form-check-label">包含子目录</span>
+                </label>
               </div>
               <div class="align-self-center">
                 <a href="javascript:mediafile_transfer_all()" class="btn" title="转移当前目录">
@@ -145,7 +150,8 @@
     } else {
       folder = $("#mediafile_current_dir").val();
     }
-    ajax_post("get_sub_path", {"dir": folder, "filter": "MEDIAFILE|SUBFILE"}, function (ret) {
+    const recursive = $("#mediafile_recursive").prop("checked");
+    ajax_post("get_sub_path", {"dir": folder, "filter": "MEDIAFILE|SUBFILE", "recursive": recursive}, function (ret) {
       $("#mediafile_file_container").empty();
       $("#mediafile_current_files").val('')
       if (ret.data) {
@@ -156,6 +162,13 @@
           files.push(filepath);
           let fileext = ret.data[i].ext;
           let filename = ret.data[i].name;
+          // 递归模式下显示相对当前目录的路径，方便看出文件在哪个子目录里
+          if (recursive) {
+            const base = folder.replace(/\/+$/, "");
+            if (filepath.startsWith(base + "/")) {
+              filename = filepath.substring(base.length + 1);
+            }
+          }
           let filesize = ret.data[i].size;
           let template_html = $("#mediafile_item_template").text();
           $("#mediafile_file_container").append(
@@ -217,7 +230,7 @@
 
   function mediafile_transfer_all() {
     let path = $("#mediafile_current_dir").val();
-    show_manual_transfer_modal(3, path, '', '', '', '');
+    show_manual_transfer_modal(3, path, '', '', '', '', $("#mediafile_recursive").prop("checked"));
   }
 
   // 文件重命名

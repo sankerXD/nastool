@@ -121,6 +121,7 @@ class Downloader:
                  is_paused=None,
                  tag=None,
                  download_dir=None,
+                 download_subdir=None,
                  download_setting=None,
                  torrent_file=None):
         """
@@ -129,6 +130,7 @@ class Downloader:
         :param is_paused: 是否暂停下载
         :param tag: 种子标签
         :param download_dir: 指定下载目录
+        :param download_subdir: 在下载目录下再建一层子目录（到同一目录下），可含季目录
         :param download_setting: 下载设置id
         :param torrent_file: 种子文件路径
         :return: 种子或状态，错误信息
@@ -249,6 +251,9 @@ class Downloader:
                 download_label = download_info.get('label')
                 if not category:
                     category = download_label
+            # 到同一目录下，在下载目录下再建一层子目录
+            if download_subdir and download_dir:
+                download_dir = "%s/%s" % (str(download_dir).replace("\\", "/").rstrip("/"), download_subdir)
             # 添加下载
             print_url = content if isinstance(content, str) else url
             if is_paused:
